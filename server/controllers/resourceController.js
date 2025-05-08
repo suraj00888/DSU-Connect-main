@@ -1,11 +1,11 @@
 const Resource = require('../models/Resource');
-const { uploadFileToDrive, deleteFileFromDrive } = require('../utils/googleDrive');
+const googleDriveService = require('../utils/googleDrive');
 const multer = require('multer');
 const { promisify } = require('util');
 
 // Set up multer for memory storage
 const storage = multer.memoryStorage();
-const upload = multer({ 
+const upload = multer({
     storage,
     limits: { fileSize: 10 * 1024 * 1024 } // 10MB limit
 }).single('file');
@@ -22,18 +22,24 @@ exports.uploadResource = async (req, res) => {
         await uploadMiddleware(req, res);
         
         if (!req.file) {
-            return res.status(400).json({ message: 'Please upload a file' });
+            return res.status(400).json({ 
+                success: false,
+                message: 'Please upload a file' 
+            });
         }
         
         // Validate request body
         const { title, description, category, tags } = req.body;
         
         if (!title || !description || !category) {
-            return res.status(400).json({ message: 'Title, description, and category are required' });
+            return res.status(400).json({ 
+                success: false,
+                message: 'Title, description, and category are required' 
+            });
         }
         
         // Upload file to Google Drive
-        const driveData = await uploadFileToDrive(req.file);
+        const driveData = await googleDriveService.uploadFile(req.file);
         
         // Create new resource document
         const resource = new Resource({
@@ -56,13 +62,17 @@ exports.uploadResource = async (req, res) => {
         await resource.save();
         
         res.status(201).json({
+            success: true,
             message: 'Resource uploaded successfully',
-            resource
+            data: resource
         });
         
     } catch (error) {
         console.error('Error uploading resource:', error);
-        res.status(500).json({ message: 'Server error' });
+        res.status(500).json({ 
+            success: false,
+            message: error.message || 'Server error'
+        });
     }
 };
 
@@ -108,18 +118,24 @@ exports.getResources = async (req, res) => {
         const total = await Resource.countDocuments(query);
         
         res.json({
-            resources,
-            pagination: {
-                total,
-                page: parseInt(page),
-                limit: parseInt(limit),
-                pages: Math.ceil(total / parseInt(limit))
+            success: true,
+            data: {
+                resources,
+                pagination: {
+                    total,
+                    page: parseInt(page),
+                    limit: parseInt(limit),
+                    pages: Math.ceil(total / parseInt(limit))
+                }
             }
         });
         
     } catch (error) {
         console.error('Error fetching resources:', error);
-        res.status(500).json({ message: 'Server error' });
+        res.status(500).json({ 
+            success: false,
+            message: 'Error fetching resources'
+        });
     }
 };
 
@@ -131,18 +147,27 @@ exports.getResource = async (req, res) => {
         const resource = await Resource.findById(req.params.id);
         
         if (!resource) {
-            return res.status(404).json({ message: 'Resource not found' });
+            return res.status(404).json({ 
+                success: false,
+                message: 'Resource not found' 
+            });
         }
         
         // Increment view count
         resource.views += 1;
         await resource.save();
         
-        res.json(resource);
+        res.json({
+            success: true,
+            data: resource
+        });
         
     } catch (error) {
         console.error('Error fetching resource:', error);
-        res.status(500).json({ message: 'Server error' });
+        res.status(500).json({ 
+            success: false,
+            message: 'Error fetching resource'
+        });
     }
 };
 
@@ -154,7 +179,10 @@ exports.deleteResource = async (req, res) => {
         const resource = await Resource.findById(req.params.id);
         
         if (!resource) {
-            return res.status(404).json({ message: 'Resource not found' });
+            return res.status(404).json({ 
+                success: false,
+                message: 'Resource not found' 
+            });
         }
         
         // Check if user is authorized to delete (admin or uploader)
@@ -162,20 +190,29 @@ exports.deleteResource = async (req, res) => {
         const isUploader = resource.uploader.id.toString() === req.user._id.toString();
         
         if (!isAdmin && !isUploader) {
-            return res.status(403).json({ message: 'You are not authorized to delete this resource' });
+            return res.status(403).json({ 
+                success: false,
+                message: 'You are not authorized to delete this resource' 
+            });
         }
         
         // Delete file from Google Drive
-        await deleteFileFromDrive(resource.driveFileId);
+        await googleDriveService.deleteFile(resource.driveFileId);
         
         // Delete resource from database
         await Resource.findByIdAndDelete(req.params.id);
         
-        res.json({ message: 'Resource deleted successfully' });
+        res.json({ 
+            success: true,
+            message: 'Resource deleted successfully' 
+        });
         
     } catch (error) {
         console.error('Error deleting resource:', error);
-        res.status(500).json({ message: 'Server error' });
+        res.status(500).json({ 
+            success: false,
+            message: error.message || 'Error deleting resource'
+        });
     }
 };
 
@@ -187,21 +224,33 @@ exports.trackDownload = async (req, res) => {
         const resource = await Resource.findById(req.params.id);
         
         if (!resource) {
-            return res.status(404).json({ message: 'Resource not found' });
+            return res.status(404).json({ 
+                success: false,
+                message: 'Resource not found' 
+            });
         }
         
         // Increment download count
         resource.downloads += 1;
         await resource.save();
         
-        // Return download URL
+        // Get updated file info from Google Drive
+        const fileInfo = await googleDriveService.getFileInfo(resource.driveFileId);
+        
         res.json({ 
-            downloadUrl: resource.fileUrl,
-            message: 'Download count updated'
+            success: true,
+            data: {
+                downloadUrl: resource.fileUrl,
+                webViewLink: fileInfo.webViewLink,
+                message: 'Download count updated'
+            }
         });
         
     } catch (error) {
         console.error('Error tracking download:', error);
-        res.status(500).json({ message: 'Server error' });
+        res.status(500).json({ 
+            success: false,
+            message: error.message || 'Error tracking download'
+        });
     }
 }; 

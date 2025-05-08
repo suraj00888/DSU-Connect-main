@@ -88,13 +88,23 @@ const ResourcesPage = () => {
       const response = await resourcesApi.getResources(params);
       
       // Update state with fetched data
-      setResources(response.resources || []);
-      setPagination(response.pagination || {
-        page,
-        limit: pagination.limit,
-        total: response.resources?.length || 0,
-        pages: Math.ceil((response.resources?.length || 0) / pagination.limit)
-      });
+      if (response.success && response.data) {
+        setResources(response.data.resources || []);
+        setPagination(response.data.pagination || {
+          page,
+          limit: pagination.limit,
+          total: response.data.resources?.length || 0,
+          pages: Math.ceil((response.data.resources?.length || 0) / pagination.limit)
+        });
+      } else {
+        setResources([]);
+        setPagination({
+          page: 1,
+          limit: pagination.limit,
+          total: 0,
+          pages: 0
+        });
+      }
       
     } catch (err) {
       console.error('Error loading resources:', err);

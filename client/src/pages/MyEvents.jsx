@@ -77,27 +77,36 @@ const MyEvents = () => {
         title="My Events"
         subtitle="Events you've registered for"
       />
-      
-      {loading ? (
-        <div className="flex justify-center items-center h-64">
-          <p className="text-muted-foreground">Loading your events...</p>
-        </div>
-      ) : error ? (
-        <div className="mt-4 p-4 bg-destructive/10 border border-destructive/20 rounded-lg">
-          <p className="text-destructive">{error}</p>
-          <Button 
-            variant="outline" 
-            className="mt-2"
-            onClick={refreshEvents}
-          >
-            Try Again
-          </Button>
-        </div>
-      ) : (
-        <>
-          {events.length === 0 ? (
-            <div className="mt-8 text-center">
-              <p className="text-muted-foreground">You haven't registered for any events yet.</p>
+      <main className="w-full px-4 sm:px-6 lg:px-8 py-8 sm:py-10">
+        <div className="bg-card/90 backdrop-blur-sm rounded-xl shadow-lg p-6 sm:p-7 md:p-8">
+          {/* Loading state */}
+          {loading && (
+            <div className="py-12 text-center">
+              <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+              <p className="mt-4 text-muted-foreground">Loading your events...</p>
+            </div>
+          )}
+          
+          {/* Error state */}
+          {error && !loading && (
+            <div className="py-12 text-center">
+              <AlertCircle className="mx-auto h-12 w-12 text-destructive" />
+              <p className="mt-4 text-destructive">{error}</p>
+              <Button 
+                variant="outline" 
+                className="mt-4"
+                onClick={refreshEvents}
+              >
+                Try Again
+              </Button>
+            </div>
+          )}
+          
+          {/* Empty state */}
+          {!loading && !error && events.length === 0 && (
+            <div className="py-12 text-center">
+              <Calendar className="mx-auto h-12 w-12 text-muted-foreground" />
+              <p className="mt-4 text-muted-foreground">You haven't registered for any events yet.</p>
               <Button 
                 className="mt-4"
                 onClick={() => navigate('/events')}
@@ -105,8 +114,11 @@ const MyEvents = () => {
                 Browse Events
               </Button>
             </div>
-          ) : (
-            <div className="mt-8 space-y-10">
+          )}
+          
+          {/* Events content */}
+          {!loading && !error && events.length > 0 && (
+            <div className="space-y-10">
               {/* Ongoing Events */}
               {ongoingEvents.length > 0 && (
                 <section>
@@ -156,8 +168,8 @@ const MyEvents = () => {
               )}
             </div>
           )}
-        </>
-      )}
+        </div>
+      </main>
     </AppLayout>
   );
 };

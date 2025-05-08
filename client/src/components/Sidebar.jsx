@@ -48,7 +48,7 @@ const Sidebar = () => {
     // Only show My Events for non-admin users
     ...(!isAdmin ? [{ path: '/my-events', icon: <Star size={20} />, label: 'My Events' }] : []),
     { path: '/resources', icon: <FileText size={20} />, label: 'Resources' },
-    { path: '/forum', icon: <MessageSquare size={20} />, label: 'Discussion Forum' },
+    { path: '/groups', icon: <MessageSquare size={20} />, label: 'Discussion Groups' },
   ];
 
   return (
@@ -65,29 +65,30 @@ const Sidebar = () => {
       {/* Sidebar */}
       <div
         className={cn(
-          "fixed left-0 top-0 h-full bg-background/95 backdrop-blur-sm z-40 w-64 shadow-xl transition-transform duration-300 ease-in-out",
-          isOpen || !isMobile ? "translate-x-0" : "-translate-x-full"
+          "fixed top-0 left-0 h-full w-64 bg-background border-r border-border transition-transform duration-300 ease-in-out z-30",
+          isOpen ? "translate-x-0" : "-translate-x-full",
+          !isMobile && "translate-x-0"
         )}
       >
-        {/* Logo area */}
-        <div className="p-4 flex items-center justify-between bg-gradient-to-r from-primary/20 via-primary/10 to-transparent">
-          <img src={logo} alt="DSUConnect Logo" className="h-12 w-auto" />
-          
-          {/* Close button inside sidebar - only visible on mobile */}
+        {/* Logo and close button */}
+        <div className="flex items-center justify-between p-4 border-b border-border">
+          <Link to="/" className="flex items-center space-x-2">
+            <img src={logo} alt="DSUConnect Logo" className="h-8 w-8" />
+            <span className="text-xl font-semibold text-foreground">DSUConnect</span>
+          </Link>
           {isMobile && (
             <Button
               variant="ghost"
               size="icon"
-              className="lg:hidden text-primary hover:bg-primary/10 hover:text-primary"
               onClick={toggleSidebar}
-              aria-label="Close menu"
+              className="lg:hidden"
             >
               <X size={20} />
             </Button>
           )}
         </div>
 
-        {/* Navigation links */}
+        {/* Navigation */}
         <nav className="mt-6 px-4">
           <ul className="space-y-2">
             {navItems.map((item) => (

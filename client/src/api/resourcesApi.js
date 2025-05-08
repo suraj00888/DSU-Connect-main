@@ -13,10 +13,10 @@ const resourcesApi = {
   getResources: async (params = {}) => {
     try {
       const response = await api.get('/api/resources', { params });
-      return response.data || { resources: [], pagination: {} };
+      return response.data || { success: false, data: { resources: [], pagination: {} } };
     } catch (error) {
       console.error('API Error in getResources:', error);
-      throw error.response?.data || { message: 'Failed to fetch resources' };
+      throw error.response?.data || { success: false, message: 'Failed to fetch resources' };
     }
   },
 
@@ -28,10 +28,10 @@ const resourcesApi = {
   getResource: async (id) => {
     try {
       const response = await api.get(`/api/resources/${id}`);
-      return response.data || null;
+      return response.data || { success: false, data: null };
     } catch (error) {
       console.error('API Error in getResource:', error);
-      throw error.response?.data || { message: 'Failed to fetch resource details' };
+      throw error.response?.data || { success: false, message: 'Failed to fetch resource details' };
     }
   },
 
@@ -50,7 +50,7 @@ const resourcesApi = {
       return response.data;
     } catch (error) {
       console.error('API Error in uploadResource:', error);
-      throw error.response?.data || { message: 'Failed to upload resource' };
+      throw error.response?.data || { success: false, message: 'Failed to upload resource' };
     }
   },
 
@@ -65,7 +65,7 @@ const resourcesApi = {
       return response.data;
     } catch (error) {
       console.error('API Error in deleteResource:', error);
-      throw error.response?.data || { message: 'Failed to delete resource' };
+      throw error.response?.data || { success: false, message: 'Failed to delete resource' };
     }
   },
 
@@ -80,7 +80,7 @@ const resourcesApi = {
       return response.data;
     } catch (error) {
       console.error('API Error in trackDownload:', error);
-      throw error.response?.data || { message: 'Failed to track download' };
+      throw error.response?.data || { success: false, message: 'Failed to track download' };
     }
   }
 };

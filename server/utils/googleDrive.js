@@ -10,15 +10,40 @@ class GoogleDriveService {
 
     initialize() {
         try {
+            const credentialPath = process.env.GOOGLE_APPLICATION_CREDENTIALS || path.join(__dirname, '../credential.json');
+            
+            // Check if credential file exists and is readable
+            const fs = require('fs');
+            
+            // Use absolute path to ensure correct file access
+            const absoluteCredentialPath = path.isAbsolute(credentialPath) 
+                ? credentialPath 
+                : path.resolve(__dirname, '../credential.json');
+            
+            if (!fs.existsSync(absoluteCredentialPath)) {
+                throw new Error(`Credential file not found at: ${absoluteCredentialPath}`);
+            }
+            
+            // Read and validate credential file
+            const credentialData = JSON.parse(fs.readFileSync(absoluteCredentialPath, 'utf8'));
+            
+            // Validate private key format
+            if (!credentialData.private_key || !credentialData.private_key.includes('-----BEGIN PRIVATE KEY-----')) {
+                throw new Error('Invalid private key format in credential file');
+            }
+
             const auth = new google.auth.GoogleAuth({
-                keyFile: process.env.GOOGLE_APPLICATION_CREDENTIALS || path.join(__dirname, '../credential.json'),
-                scopes: ['https://www.googleapis.com/auth/drive']
+                keyFile: absoluteCredentialPath,
+                scopes: [
+                    'https://www.googleapis.com/auth/drive',
+                    'https://www.googleapis.com/auth/drive.file'
+                ]
             });
 
             this.drive = google.drive({ version: 'v3', auth });
             console.log('Google Drive service initialized successfully');
         } catch (error) {
-            console.error('Failed to initialize Google Drive service:', error);
+            console.error('Failed to initialize Google Drive service:', error.message);
             throw new Error('Google Drive service initialization failed');
         }
     }
@@ -42,7 +67,13 @@ class GoogleDriveService {
             bufferStream.push(fileObject.buffer);
             bufferStream.push(null);
 
-            console.log(`Uploading file: ${fileObject.originalname}`);
+            // Test authentication first
+            try {
+                await this.drive.files.list({ pageSize: 1 });
+            } catch (authError) {
+                console.error('Google Drive authentication failed:', authError.message);
+                throw new Error(`Authentication failed: ${authError.message}`);
+            }
 
             const response = await this.drive.files.create({
                 requestBody: fileMetadata,
@@ -53,8 +84,6 @@ class GoogleDriveService {
                 fields: 'id,webViewLink'
             });
 
-            console.log('File uploaded successfully, setting permissions...');
-
             await this.drive.permissions.create({
                 fileId: response.data.id,
                 requestBody: {
@@ -63,19 +92,13 @@ class GoogleDriveService {
                 }
             });
 
-            console.log('File permissions set successfully');
-
             return {
                 fileId: response.data.id,
                 webViewLink: response.data.webViewLink,
-                downloadLink: `https://drive.google.com/uc?export=download&id=${response.data.id}`
+                downloadLink: `https://drive.google.com/thumbnail?id=${response.data.id}&sz=w400-h400`
             };
         } catch (error) {
-            console.error('Error uploading to Google Drive:', {
-                message: error.message,
-                code: error.code,
-                errors: error.errors
-            });
+            console.error('Error uploading to Google Drive:', error.message);
             throw new Error(`Failed to upload file: ${error.message}`);
         }
     }
@@ -86,12 +109,10 @@ class GoogleDriveService {
                 throw new Error('No file ID provided');
             }
 
-            console.log(`Deleting file with ID: ${fileId}`);
             await this.drive.files.delete({ fileId });
-            console.log('File deleted successfully');
             return true;
         } catch (error) {
-            console.error('Error deleting file from Google Drive:', error);
+            console.error('Error deleting file from Google Drive:', error.message);
             throw new Error(`Failed to delete file: ${error.message}`);
         }
     }
@@ -115,7 +136,7 @@ class GoogleDriveService {
                 mimeType: response.data.mimeType
             };
         } catch (error) {
-            console.error('Error getting file info:', error);
+            console.error('Error getting file info:', error.message);
             throw new Error(`Failed to get file info: ${error.message}`);
         }
     }
@@ -124,4 +145,35 @@ class GoogleDriveService {
 // Create a singleton instance
 const googleDriveService = new GoogleDriveService();
 
-module.exports = googleDriveService; 
+// Wrapper functions for backward compatibility
+const uploadToGoogleDrive = async (fileObject, fileName = null) => {
+    try {
+        // If fileName is provided, use it instead of original name
+        if (fileName) {
+            fileObject.originalname = fileName;
+        }
+        
+        const result = await googleDriveService.uploadFile(fileObject);
+        return {
+            fileId: result.fileId,
+            fileUrl: result.downloadLink,
+            webViewLink: result.webViewLink
+        };
+    } catch (error) {
+        throw error;
+    }
+};
+
+const deleteFromGoogleDrive = async (fileId) => {
+    try {
+        return await googleDriveService.deleteFile(fileId);
+    } catch (error) {
+        throw error;
+    }
+};
+
+module.exports = {
+    googleDriveService,
+    uploadToGoogleDrive,
+    deleteFromGoogleDrive
+}; 

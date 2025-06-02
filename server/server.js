@@ -2,18 +2,20 @@ const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
 const dotenv = require('dotenv');
+const path = require('path');
 const http = require('http');
 const socketIo = require('socket.io');
 const authRoutes = require('./routes/auth');
 const userRoutes = require('./routes/users');
+const userProfileRoutes = require('./routes/user');
 const eventRoutes = require('./routes/events');
 const resourceRoutes = require('./routes/resources');
 const groupRoutes = require('./routes/groups');
 const messageRoutes = require('./routes/messages');
 const { protect } = require('./middleware/auth');
 
-// Load environment variables
-dotenv.config();
+// Load environment variables with explicit path
+dotenv.config({ path: path.join(__dirname, '.env') });
 
 // Create Express app
 const app = express();
@@ -25,6 +27,9 @@ const io = socketIo(server, {
     credentials: true
   }
 });
+
+// Make socket instance globally available
+global.io = io;
 
 // Middleware
 app.use(cors({ 
@@ -40,50 +45,46 @@ mongoose.connect(process.env.MONGO_URI)
 
 // Socket.IO connection handling
 io.on('connection', (socket) => {
-  console.log('New client connected');
+  console.log('User connected:', socket.id);
 
   // Join a group
-  socket.on('join_group', (groupId) => {
-    socket.join(groupId);
-    console.log(`User joined group: ${groupId}`);
+  socket.on('join_group', (data) => {
+    const groupId = typeof data === 'string' ? data : data.groupId;
+    if (groupId) {
+      socket.join(groupId);
+      console.log(`Socket ${socket.id} joined group ${groupId}`);
+    }
   });
 
   // Leave a group
-  socket.on('leave_group', (groupId) => {
-    socket.leave(groupId);
-    console.log(`User left group: ${groupId}`);
-  });
-
-  // Handle new message
-  socket.on('new_message', (data) => {
-    io.to(data.groupId).emit('message_received', data);
+  socket.on('leave_group', (data) => {
+    const groupId = typeof data === 'string' ? data : data.groupId;
+    if (groupId) {
+      socket.leave(groupId);
+      console.log(`Socket ${socket.id} left group ${groupId}`);
+    }
   });
 
   // Handle typing indicator
   socket.on('typing', (data) => {
-    socket.to(data.groupId).emit('user_typing', {
-      userId: data.userId,
-      groupId: data.groupId
-    });
-  });
-
-  // Handle stop typing
-  socket.on('stop_typing', (data) => {
-    socket.to(data.groupId).emit('user_stop_typing', {
-      userId: data.userId,
-      groupId: data.groupId
-    });
+    if (data.groupId) {
+      socket.to(data.groupId).emit('typing', {
+        userId: data.userId,
+        isTyping: data.isTyping
+      });
+    }
   });
 
   // Handle disconnection
   socket.on('disconnect', () => {
-    console.log('Client disconnected');
+    console.log('User disconnected:', socket.id);
   });
 });
 
 // Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/users', protect, userRoutes);
+app.use('/api/user', userProfileRoutes);
 app.use('/api/events', protect, eventRoutes);
 app.use('/api/resources', protect, resourceRoutes);
 app.use('/api/groups', protect, groupRoutes);

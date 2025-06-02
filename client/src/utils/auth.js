@@ -92,16 +92,26 @@ export const setupTokenMonitoring = () => {
   };
 };
 
-const TOKEN_KEY = 'auth_token';
-
+/**
+ * Get the auth token from localStorage
+ * @returns {string|null} The token or null if not found
+ */
 export const getToken = () => {
-  return localStorage.getItem(TOKEN_KEY);
+  // Use 'token' instead of TOKEN_KEY to match what's actually stored
+  return localStorage.getItem('token');
 };
 
+/**
+ * Set the auth token in localStorage
+ * @param {string} token - The token to store
+ */
 export const setToken = (token) => {
-  localStorage.setItem(TOKEN_KEY, token);
+  localStorage.setItem('token', token);
 };
 
+/**
+ * Remove the auth token from localStorage
+ */
 export const removeToken = () => {
-  localStorage.removeItem(TOKEN_KEY);
+  localStorage.removeItem('token');
 };

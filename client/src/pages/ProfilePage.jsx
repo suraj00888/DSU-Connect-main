@@ -1,18 +1,33 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import { updateUser } from '../features/auth/authSlice';
 import AppLayout from '../components/AppLayout';
 import Header from '../components/Header';
-import { User, Mail, Shield, Eye, EyeOff, CheckCircle, AlertCircle } from 'lucide-react';
+import { User, Mail, Shield, Eye, EyeOff, CheckCircle, AlertCircle, Camera, Upload, Trash2, X } from 'lucide-react';
 import api from '../api/index.js';
+import userApi from '../api/userApi.js';
 
 const ProfilePage = () => {
   const user = useSelector(state => state.auth.user);
   const dispatch = useDispatch();
+  const fileInputRef = useRef(null);
+  const videoRef = useRef(null);
+  const canvasRef = useRef(null);
   
   // Edit states
   const [isEditing, setIsEditing] = useState(false);
   const [isChangingPassword, setIsChangingPassword] = useState(false);
+  
+  // Photo upload states
+  const [selectedPhoto, setSelectedPhoto] = useState(null);
+  const [photoPreview, setPhotoPreview] = useState(null);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  
+  // Camera states
+  const [showCameraModal, setShowCameraModal] = useState(false);
+  const [cameraStream, setCameraStream] = useState(null);
+  const [capturedPhoto, setCapturedPhoto] = useState(null);
+  const [isCameraActive, setIsCameraActive] = useState(false);
   
   // Form data states
   const [formData, setFormData] = useState({
@@ -36,6 +51,221 @@ const ProfilePage = () => {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(false);
+
+  // Debug: Log user object to see structure
+  console.log('Current user object:', user);
+  console.log('User profile photo:', user?.profilePhoto);
+
+  // Cleanup camera stream on component unmount
+  useEffect(() => {
+    return () => {
+      if (cameraStream) {
+        cameraStream.getTracks().forEach(track => track.stop());
+      }
+    };
+  }, [cameraStream]);
+
+  // Monitor video element availability
+  useEffect(() => {
+    if (showCameraModal && cameraStream && videoRef.current && !isCameraActive) {
+      console.log('Video element became available, setting up stream...');
+      
+      // Set up the video element with the existing stream
+      videoRef.current.onloadedmetadata = () => {
+        console.log('Video metadata loaded (from useEffect)');
+        console.log('Video dimensions:', videoRef.current.videoWidth, 'x', videoRef.current.videoHeight);
+        setIsCameraActive(true);
+      };
+      
+      videoRef.current.srcObject = cameraStream;
+      videoRef.current.play().catch(error => {
+        console.error('Error playing video from useEffect:', error);
+      });
+    }
+  }, [showCameraModal, cameraStream, isCameraActive]);
+
+  // Camera functions
+  const startCamera = async () => {
+    try {
+      setError(''); // Clear any previous errors
+      console.log('Starting camera...');
+      
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        video: { 
+          width: { ideal: 640 },
+          height: { ideal: 480 },
+          facingMode: 'user'
+        } 
+      });
+      
+      console.log('Camera stream obtained:', stream);
+      console.log('Stream tracks:', stream.getTracks());
+      console.log('Video tracks:', stream.getVideoTracks());
+      
+      setCameraStream(stream);
+      
+      // Small delay to ensure video element is available
+      setTimeout(() => {
+        if (videoRef.current) {
+          console.log('Video element found:', videoRef.current);
+          
+          // Set up event handlers before assigning stream
+          videoRef.current.onloadedmetadata = () => {
+            console.log('Video metadata loaded');
+            console.log('Video dimensions:', videoRef.current.videoWidth, 'x', videoRef.current.videoHeight);
+            setIsCameraActive(true);
+          };
+          
+          videoRef.current.oncanplay = () => {
+            console.log('Video can play');
+          };
+          
+          videoRef.current.onplaying = () => {
+            console.log('Video is playing');
+          };
+          
+          videoRef.current.onerror = (error) => {
+            console.error('Video error:', error);
+            setError('Error loading camera feed');
+          };
+          
+          videoRef.current.onloadstart = () => {
+            console.log('Video load started');
+          };
+          
+          // Assign the stream
+          videoRef.current.srcObject = stream;
+          
+          // Force video to load and play
+          try {
+            console.log('Attempting to load video...');
+            videoRef.current.load();
+            
+            console.log('Attempting to play video...');
+            const playPromise = videoRef.current.play();
+            
+            if (playPromise !== undefined) {
+              playPromise.then(() => {
+                console.log('Video playing successfully');
+              }).catch(playError => {
+                console.error('Error playing video:', playError);
+                setError('Unable to start video playback: ' + playError.message);
+              });
+            }
+          } catch (playError) {
+            console.error('Error playing video:', playError);
+            setError('Unable to start video playback: ' + playError.message);
+          }
+        } else {
+          console.error('Video element not found!');
+          setError('Video element not available');
+        }
+      }, 100);
+    } catch (error) {
+      console.error('Error accessing camera:', error);
+      let errorMessage = 'Unable to access camera. ';
+      
+      if (error.name === 'NotAllowedError') {
+        errorMessage += 'Please allow camera permissions and try again.';
+      } else if (error.name === 'NotFoundError') {
+        errorMessage += 'No camera found on this device.';
+      } else if (error.name === 'NotSupportedError') {
+        errorMessage += 'Camera is not supported on this browser.';
+      } else {
+        errorMessage += 'Please check your camera and try again.';
+      }
+      
+      setError(errorMessage);
+      setIsCameraActive(false);
+    }
+  };
+
+  const stopCamera = () => {
+    console.log('Stopping camera...');
+    if (cameraStream) {
+      cameraStream.getTracks().forEach(track => {
+        track.stop();
+        console.log('Camera track stopped:', track.kind);
+      });
+      setCameraStream(null);
+    }
+    
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+    
+    setIsCameraActive(false);
+  };
+
+  const capturePhoto = () => {
+    if (videoRef.current && canvasRef.current) {
+      const canvas = canvasRef.current;
+      const video = videoRef.current;
+      const context = canvas.getContext('2d');
+      
+      // Check if video has valid dimensions
+      if (video.videoWidth === 0 || video.videoHeight === 0) {
+        setError('Camera not ready. Please wait a moment and try again.');
+        return;
+      }
+      
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      
+      console.log('Capturing photo with dimensions:', canvas.width, 'x', canvas.height);
+      
+      context.drawImage(video, 0, 0, canvas.width, canvas.height);
+      
+      canvas.toBlob((blob) => {
+        if (blob) {
+          const file = new File([blob], 'camera-photo.jpg', { type: 'image/jpeg' });
+          setCapturedPhoto({
+            file,
+            preview: canvas.toDataURL('image/jpeg')
+          });
+          stopCamera();
+          console.log('Photo captured successfully');
+        } else {
+          setError('Failed to capture photo. Please try again.');
+        }
+      }, 'image/jpeg', 0.8);
+    } else {
+      setError('Camera not ready. Please try again.');
+    }
+  };
+
+  const retakePhoto = () => {
+    setCapturedPhoto(null);
+    startCamera();
+  };
+
+  const savePhotoFromCamera = () => {
+    if (capturedPhoto) {
+      setSelectedPhoto(capturedPhoto.file);
+      setPhotoPreview(capturedPhoto.preview);
+      setShowCameraModal(false);
+      setCapturedPhoto(null);
+      setError('');
+    }
+  };
+
+  const openCameraModal = async () => {
+    setShowCameraModal(true);
+    setError('');
+    setIsCameraActive(false);
+    
+    // Small delay to ensure modal is rendered
+    setTimeout(async () => {
+      await startCamera();
+    }, 100);
+  };
+
+  const closeCameraModal = () => {
+    setShowCameraModal(false);
+    stopCamera();
+    setCapturedPhoto(null);
+    setError(''); // Clear any camera-related errors
+  };
   
   // Handle input changes for profile form
   const handleChange = (e) => {
@@ -153,6 +383,104 @@ const ProfilePage = () => {
     setError('');
   };
 
+  // Handle photo selection
+  const handlePhotoSelect = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      // Validate file type
+      if (!file.type.startsWith('image/')) {
+        setError('Please select an image file');
+        return;
+      }
+      
+      // Validate file size (5MB limit)
+      if (file.size > 5 * 1024 * 1024) {
+        setError('Image size must be less than 5MB');
+        return;
+      }
+      
+      setSelectedPhoto(file);
+      
+      // Create preview
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        setPhotoPreview(e.target.result);
+      };
+      reader.readAsDataURL(file);
+      setError('');
+    }
+  };
+
+  // Handle photo upload
+  const handlePhotoUpload = async () => {
+    if (!selectedPhoto) return;
+    
+    setUploadingPhoto(true);
+    setError('');
+    
+    try {
+      const response = await userApi.uploadProfilePhoto(selectedPhoto);
+      console.log('Upload response:', response);
+      console.log('Profile photo data:', response.data?.profilePhoto);
+      
+      // Update user in Redux store with new profile photo
+      dispatch(updateUser({
+        ...user,
+        profilePhoto: response.data?.profilePhoto
+      }));
+      
+      setSuccess('Profile photo updated successfully!');
+      setSelectedPhoto(null);
+      setPhotoPreview(null);
+      
+      // Clear success message after 3 seconds
+      setTimeout(() => {
+        setSuccess('');
+      }, 3000);
+    } catch (error) {
+      console.error('Upload error:', error);
+      setError(error.message || 'Failed to upload photo. Please try again.');
+    } finally {
+      setUploadingPhoto(false);
+    }
+  };
+
+  // Handle photo deletion
+  const handlePhotoDelete = async () => {
+    setUploadingPhoto(true);
+    setError('');
+    
+    try {
+      await userApi.deleteProfilePhoto();
+      
+      // Update user in Redux store to remove profile photo
+      dispatch(updateUser({
+        ...user,
+        profilePhoto: null
+      }));
+      
+      setSuccess('Profile photo deleted successfully!');
+      
+      // Clear success message after 3 seconds
+      setTimeout(() => {
+        setSuccess('');
+      }, 3000);
+    } catch (error) {
+      setError(error.message || 'Failed to delete photo. Please try again.');
+    } finally {
+      setUploadingPhoto(false);
+    }
+  };
+
+  // Cancel photo selection
+  const handlePhotoCancelSelection = () => {
+    setSelectedPhoto(null);
+    setPhotoPreview(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
   return (
     <AppLayout>
       <Header title="Profile" />
@@ -190,17 +518,111 @@ const ProfilePage = () => {
           {/* Profile Card */}
           <div className="bg-card/90 backdrop-blur-sm rounded-xl shadow-lg p-6 sm:p-8 mb-6">
             <div className="flex flex-col sm:flex-row items-center sm:items-start gap-6">
-              {/* Avatar */}
-              <div className="h-24 w-24 rounded-full flex items-center justify-center text-white text-2xl font-medium"
-                   style={{ 
-                     backgroundColor: user?.name 
-                       ? `hsl(${user.name.split('').reduce((acc, char) => char.charCodeAt(0) + ((acc << 5) - acc), 0) % 360}, 70%, 50%)`
-                       : 'hsl(215, 70%, 50%)' 
-                   }}>
-                {user?.name 
-                  ? user.name.split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase()
-                  : 'U'}
+              {/* Avatar with Photo Upload */}
+              <div className="relative">
+                <div className="h-24 w-24 rounded-full overflow-hidden flex items-center justify-center text-white text-2xl font-medium border-4 border-primary/20"
+                     style={{ 
+                       backgroundColor: user?.name 
+                         ? `hsl(${user.name.split('').reduce((acc, char) => char.charCodeAt(0) + ((acc << 5) - acc), 0) % 360}, 70%, 50%)`
+                         : 'hsl(215, 70%, 50%)' 
+                     }}>
+                  {photoPreview ? (
+                    <img 
+                      src={photoPreview} 
+                      alt="Profile preview" 
+                      className="w-full h-full object-cover"
+                    />
+                  ) : user?.profilePhoto?.fileUrl ? (
+                    <img 
+                      src={user.profilePhoto.fileUrl} 
+                      alt="Profile" 
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    user?.name 
+                      ? user.name.split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase()
+                      : 'U'
+                  )}
+                </div>
+                
+                {/* Photo Upload Options */}
+                <div className="absolute -bottom-2 -right-2 flex gap-1">
+                  <button
+                    onClick={() => fileInputRef.current?.click()}
+                    className="bg-primary hover:bg-primary/90 text-primary-foreground p-2 rounded-full shadow-lg transition-colors"
+                    disabled={uploadingPhoto}
+                    title="Upload from device"
+                  >
+                    <Upload className="h-4 w-4" />
+                  </button>
+                  <button
+                    onClick={openCameraModal}
+                    className="bg-blue-600 hover:bg-blue-700 text-white p-2 rounded-full shadow-lg transition-colors"
+                    disabled={uploadingPhoto}
+                    title="Capture from camera"
+                  >
+                    <Camera className="h-4 w-4" />
+                  </button>
+                </div>
+                
+                {/* Hidden File Input */}
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={handlePhotoSelect}
+                  className="hidden"
+                />
               </div>
+              
+              {/* Photo Upload Controls */}
+              {(selectedPhoto || user?.profilePhoto?.fileUrl) && (
+                <div className="flex flex-col gap-2">
+                  {selectedPhoto && (
+                    <div className="flex gap-2">
+                      <button
+                        onClick={handlePhotoUpload}
+                        disabled={uploadingPhoto}
+                        className="flex items-center gap-2 px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-sm rounded-md transition-colors disabled:opacity-50"
+                      >
+                        {uploadingPhoto ? (
+                          <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                          </svg>
+                        ) : (
+                          <Upload className="h-4 w-4" />
+                        )}
+                        Upload
+                      </button>
+                      <button
+                        onClick={handlePhotoCancelSelection}
+                        className="px-3 py-1.5 bg-gray-500 hover:bg-gray-600 text-white text-sm rounded-md transition-colors"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  )}
+                  
+                  {user?.profilePhoto?.fileUrl && !selectedPhoto && (
+                    <button
+                      onClick={handlePhotoDelete}
+                      disabled={uploadingPhoto}
+                      className="flex items-center gap-2 px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white text-sm rounded-md transition-colors disabled:opacity-50"
+                    >
+                      {uploadingPhoto ? (
+                        <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                      ) : (
+                        <Trash2 className="h-4 w-4" />
+                      )}
+                      Remove Photo
+                    </button>
+                  )}
+                </div>
+              )}
               
               {/* User Info */}
               <div className="text-center sm:text-left flex-1">
@@ -214,6 +636,163 @@ const ProfilePage = () => {
               </div>
             </div>
           </div>
+
+          {/* Camera Modal */}
+          {showCameraModal && (
+            <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+              <div className="bg-card rounded-xl shadow-2xl max-w-md w-full">
+                <div className="flex items-center justify-between p-4 border-b border-border">
+                  <h3 className="text-lg font-semibold text-card-foreground">
+                    {capturedPhoto ? 'Photo Captured' : 'Take Photo'}
+                  </h3>
+                  <button
+                    onClick={closeCameraModal}
+                    className="text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    <X className="h-5 w-5" />
+                  </button>
+                </div>
+                
+                <div className="p-4">
+                  {capturedPhoto ? (
+                    // Show captured photo
+                    <div className="space-y-4">
+                      <div className="aspect-video bg-gray-100 rounded-lg overflow-hidden">
+                        <img 
+                          src={capturedPhoto.preview} 
+                          alt="Captured" 
+                          className="w-full h-full object-cover"
+                        />
+                      </div>
+                      <div className="flex gap-3">
+                        <button
+                          onClick={retakePhoto}
+                          className="flex-1 px-4 py-2 bg-gray-500 hover:bg-gray-600 text-white rounded-md transition-colors"
+                        >
+                          Retake
+                        </button>
+                        <button
+                          onClick={savePhotoFromCamera}
+                          className="flex-1 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-md transition-colors"
+                        >
+                          Save Photo
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    // Show camera feed
+                    <div className="space-y-4">
+                      <div className="aspect-video bg-gray-100 rounded-lg overflow-hidden relative">
+                        {/* Always render video element for ref attachment */}
+                        <video
+                          ref={videoRef}
+                          autoPlay
+                          playsInline
+                          muted
+                          controls={false}
+                          width="100%"
+                          height="100%"
+                          className={`w-full h-full object-cover bg-black ${isCameraActive ? 'block' : 'hidden'}`}
+                          style={{ transform: 'scaleX(-1)' }} // Mirror effect for selfie
+                          onLoadedMetadata={() => {
+                            console.log('Video onLoadedMetadata event fired');
+                            setIsCameraActive(true);
+                          }}
+                          onCanPlay={() => {
+                            console.log('Video onCanPlay event fired');
+                          }}
+                          onPlaying={() => {
+                            console.log('Video onPlaying event fired');
+                          }}
+                          onError={(e) => {
+                            console.error('Video onError event:', e);
+                            setError('Video playback error');
+                          }}
+                        />
+                        
+                        {/* Loading overlay - shown when camera is not active */}
+                        {!isCameraActive && (
+                          <div className="absolute inset-0 w-full h-full flex items-center justify-center text-muted-foreground bg-gray-200">
+                            <div className="text-center">
+                              <Camera className="h-12 w-12 mx-auto mb-2" />
+                              <p className="text-sm">
+                                {cameraStream ? 'Loading camera...' : 'Starting camera...'}
+                              </p>
+                              {error && (
+                                <p className="text-xs text-red-500 mt-2 max-w-xs">
+                                  {error}
+                                </p>
+                              )}
+                              {cameraStream && !isCameraActive && (
+                                <button
+                                  onClick={() => {
+                                    console.log('Manual video setup triggered');
+                                    console.log('Video ref current:', videoRef.current);
+                                    if (videoRef.current && cameraStream) {
+                                      console.log('Setting srcObject manually...');
+                                      videoRef.current.srcObject = cameraStream;
+                                      videoRef.current.play().then(() => {
+                                        console.log('Manual play successful');
+                                        setIsCameraActive(true);
+                                      }).catch(err => {
+                                        console.error('Manual play failed:', err);
+                                      });
+                                    } else {
+                                      console.log('Video ref or stream not available:', {
+                                        videoRef: !!videoRef.current,
+                                        cameraStream: !!cameraStream
+                                      });
+                                    }
+                                  }}
+                                  className="mt-2 px-3 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700"
+                                >
+                                  Force Start Video
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                        
+                        {/* Debug info - remove in production */}
+                        {import.meta.env.DEV && (
+                          <div className="absolute top-2 left-2 bg-black/50 text-white text-xs p-1 rounded z-10">
+                            Stream: {cameraStream ? '✓' : '✗'} | 
+                            Active: {isCameraActive ? '✓' : '✗'} |
+                            Video: {videoRef.current?.videoWidth || 0}x{videoRef.current?.videoHeight || 0} |
+                            Ref: {videoRef.current ? '✓' : '✗'}
+                          </div>
+                        )}
+                      </div>
+                      
+                      {isCameraActive && (
+                        <button
+                          onClick={capturePhoto}
+                          className="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors flex items-center justify-center gap-2"
+                        >
+                          <Camera className="h-4 w-4" />
+                          Capture Photo
+                        </button>
+                      )}
+                      
+                      {/* Retry button if camera fails */}
+                      {error && !isCameraActive && (
+                        <button
+                          onClick={startCamera}
+                          className="w-full px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-md transition-colors flex items-center justify-center gap-2"
+                        >
+                          <Camera className="h-4 w-4" />
+                          Retry Camera
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Hidden canvas for photo capture */}
+          <canvas ref={canvasRef} className="hidden" />
           
           {/* Profile Details / Edit Form */}
           <div className="bg-card/90 backdrop-blur-sm rounded-xl shadow-lg p-6 sm:p-8">

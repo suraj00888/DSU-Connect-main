@@ -40,12 +40,19 @@ exports.createGroup = async (req, res) => {
 // Get all groups
 exports.getGroups = async (req, res) => {
   try {
-    const { category, search } = req.query;
+    const { category, search, filter } = req.query;
     const query = { isActive: true };
 
     // Add category filter if provided
     if (category) {
       query.category = category;
+    }
+
+    // Add filter for "joined" or "created" groups
+    if (filter === 'joined') {
+      query.members = req.user._id;
+    } else if (filter === 'created') {
+      query.createdBy = req.user._id;
     }
 
     // Add search filter if provided

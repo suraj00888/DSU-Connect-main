@@ -4,6 +4,7 @@ import { Plus, Search, Filter, AlertCircle } from 'lucide-react';
 import AppLayout from '../components/AppLayout';
 import Header from '../components/Header';
 import EventCard from '../components/EventCard';
+import AttendanceModal from '../components/AttendanceModal';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import eventsApi from '../api/eventsApi';
@@ -15,6 +16,10 @@ const EventsPage = () => {
   const [error, setError] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [filter, setFilter] = useState('all');
+  const [attendanceModal, setAttendanceModal] = useState({
+    isOpen: false,
+    event: null
+  });
   
   // Fetch events on component mount
   useEffect(() => {
@@ -47,6 +52,28 @@ const EventsPage = () => {
   // Navigate to create event page
   const handleCreateEvent = () => {
     navigate('/events/create');
+  };
+
+  // Handle mark attendance
+  const handleMarkAttendance = (event) => {
+    setAttendanceModal({
+      isOpen: true,
+      event: event
+    });
+  };
+
+  // Close attendance modal
+  const closeAttendanceModal = () => {
+    setAttendanceModal({
+      isOpen: false,
+      event: null
+    });
+  };
+
+  // Handle attendance update
+  const handleAttendanceUpdate = (stats) => {
+    // Optionally refresh events or update local state
+    console.log('Attendance updated:', stats);
   };
   
   return (
@@ -158,12 +185,24 @@ const EventsPage = () => {
           {!loading && !error && filteredEvents.length > 0 && (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {filteredEvents.map((event) => (
-                <EventCard key={event._id} event={event} />
+                <EventCard 
+                  key={event._id} 
+                  event={event} 
+                  onMarkAttendance={handleMarkAttendance}
+                />
               ))}
             </div>
           )}
         </div>
       </main>
+
+      {/* Attendance Modal */}
+      <AttendanceModal
+        isOpen={attendanceModal.isOpen}
+        onClose={closeAttendanceModal}
+        event={attendanceModal.event}
+        onAttendanceUpdate={handleAttendanceUpdate}
+      />
     </AppLayout>
   );
 };

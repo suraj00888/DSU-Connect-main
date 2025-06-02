@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useSelector } from 'react-redux';
-import { Calendar, Clock, MapPin, Users, ChevronLeft, Edit, Trash2, Share2, AlertCircle, ChevronDown, ChevronUp } from 'lucide-react';
+import { Calendar, Clock, MapPin, Users, ChevronLeft, Edit, Trash2, Share2, AlertCircle, ChevronDown, ChevronUp, UserCheck, Download, QrCode } from 'lucide-react';
 import AppLayout from '../components/AppLayout';
 import Header from '../components/Header';
+import AttendanceModal from '../components/AttendanceModal';
 import { Button } from '../components/ui/button';
 import eventsApi from '../api/eventsApi';
 
@@ -16,6 +17,11 @@ const EventDetails = () => {
   const [registering, setRegistering] = useState(false);
   const [unregistering, setUnregistering] = useState(false);
   const [attendeesOpen, setAttendeesOpen] = useState(false);
+  const [attendanceModal, setAttendanceModal] = useState({
+    isOpen: false,
+    event: null
+  });
+  const [downloadingQR, setDownloadingQR] = useState(false);
   const user = useSelector((state) => state.auth.user);
   
   // Check if user is registered for the event - use isAttending from backend or check attendees array
@@ -37,6 +43,16 @@ const EventDetails = () => {
  
   // Check if user is an admin
   const isAdmin = user?.role === 'admin' || event?.isAdmin;
+  
+  // Check if user can mark attendance (organizer or admin)
+  const canMarkAttendance = user && (
+    user.role === 'admin' || 
+    event?.isOrganizer || 
+    (event?.organizer?.id && (
+      event.organizer.id.toString() === user.id?.toString() || 
+      event.organizer.id.toString() === user._id?.toString()
+    ))
+  );
   
   // Check if the user can register (not an admin, event not at capacity, etc.)
   const canRegister = event?.canRegister !== undefined 
@@ -233,6 +249,157 @@ const EventDetails = () => {
     }
   };
   
+  // Handle mark attendance
+  const handleMarkAttendance = () => {
+    setAttendanceModal({
+      isOpen: true,
+      event: event
+    });
+  };
+  
+  // Handle QR code download
+  const handleDownloadQR = async () => {
+    try {
+      setDownloadingQR(true);
+      
+      // Get QR code blob from API
+      const qrBlob = await eventsApi.downloadQRCode(id);
+      
+      // Create download link
+      const url = window.URL.createObjectURL(qrBlob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `event-qr-${event.title.replace(/[^a-zA-Z0-9]/g, '-')}.png`;
+      document.body.appendChild(link);
+      link.click();
+      
+      // Cleanup
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('Failed to download QR code:', err);
+      alert('Failed to download QR code. Please try again.');
+    } finally {
+      setDownloadingQR(false);
+    }
+  };
+  
+  // Close attendance modal
+  const closeAttendanceModal = () => {
+    setAttendanceModal({
+      isOpen: false,
+      event: null
+    });
+  };
+  
+  // Handle attendance update
+  const handleAttendanceUpdate = (stats) => {
+    // Optionally refresh event data or update local state
+    console.log('Attendance updated:', stats);
+  };
+
+  // Download attendance report as CSV
+  const downloadAttendanceReport = async () => {
+    try {
+      // Get the latest attendance data
+      const attendanceResponse = await eventsApi.getAttendanceList(id);
+      
+      // Extract attendees array from the response
+      const attendanceData = attendanceResponse?.attendees || [];
+      
+      // Create CSV content
+      const csvContent = generateAttendanceCSV(event, attendanceData);
+      
+      // Create and download the file
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement('a');
+      const url = URL.createObjectURL(blob);
+      link.setAttribute('href', url);
+      link.setAttribute('download', `${event.title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}_attendance_report.csv`);
+      link.style.visibility = 'hidden';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (error) {
+      console.error('Failed to download attendance report:', error);
+      alert('Failed to download attendance report. Please try again.');
+    }
+  };
+
+  // Generate CSV content for attendance report
+  const generateAttendanceCSV = (eventData, attendanceData) => {
+    const csvRows = [];
+    
+    // Event header information
+    csvRows.push(['Event Attendance Report']);
+    csvRows.push(['']);
+    csvRows.push(['Event Name:', eventData.title]);
+    csvRows.push(['Event Date:', formatDateRange(eventData.startDate, eventData.endDate)]);
+    csvRows.push(['Location:', eventData.location]);
+    csvRows.push(['Organizer:', eventData.organizer?.name || 'DSU Connect']);
+    csvRows.push(['Total Registered:', eventData.attendees?.length || 0]);
+    csvRows.push(['Report Generated:', new Date().toLocaleString()]);
+    csvRows.push(['']);
+    
+    // Attendance data headers
+    csvRows.push(['Name', 'Registration Date', 'Attendance Status', 'Marked Present At']);
+    
+    // Process attendance data
+    if (attendanceData && attendanceData.length > 0) {
+      attendanceData.forEach((attendee) => {
+        const name = attendee.name || 'Unknown';
+        const registrationDate = attendee.registeredAt ? new Date(attendee.registeredAt).toLocaleDateString() : 'N/A';
+        
+        // More explicit attendance status checking
+        let attendanceStatus;
+        if (attendee.attended === true) {
+          attendanceStatus = 'Present';
+        } else if (attendee.attended === false) {
+          attendanceStatus = 'Absent';
+        } else if (attendee.attended === null || attendee.attended === undefined) {
+          attendanceStatus = 'Not Marked';
+        } else {
+          attendanceStatus = 'Unknown';
+        }
+        
+        const markedPresentAt = attendee.attendedAt ? new Date(attendee.attendedAt).toLocaleString() : 'N/A';
+        
+        csvRows.push([name, registrationDate, attendanceStatus, markedPresentAt]);
+      });
+    } else if (eventData.attendees && eventData.attendees.length > 0) {
+      // Fallback to basic attendee list if detailed attendance data is not available
+      eventData.attendees.forEach((attendee) => {
+        const name = attendee.name || (attendee.userId?.name) || 'Unknown';
+        const registrationDate = attendee.registeredAt ? new Date(attendee.registeredAt).toLocaleDateString() : 'N/A';
+        
+        // Check if this attendee has attendance data
+        let attendanceStatus;
+        if (attendee.attended === true) {
+          attendanceStatus = 'Present';
+        } else if (attendee.attended === false) {
+          attendanceStatus = 'Absent';
+        } else {
+          attendanceStatus = 'Not Marked';
+        }
+        
+        const markedPresentAt = attendee.attendedAt ? new Date(attendee.attendedAt).toLocaleString() : 'N/A';
+        
+        csvRows.push([name, registrationDate, attendanceStatus, markedPresentAt]);
+      });
+    } else {
+      csvRows.push(['No attendees registered for this event']);
+    }
+    
+    // Convert to CSV string
+    return csvRows.map(row => 
+      row.map(field => 
+        typeof field === 'string' && field.includes(',') 
+          ? `"${field.replace(/"/g, '""')}"` 
+          : field
+      ).join(',')
+    ).join('\n');
+  };
+  
   // Toggle attendees dropdown with logging
   const toggleAttendeesDropdown = () => {
     const newState = !attendeesOpen;
@@ -318,6 +485,34 @@ const EventDetails = () => {
                 <Share2 className="h-4 w-4 mr-2" />
                 Share
               </Button>
+              
+              {/* Mark Attendance button - only for organizers and admins */}
+              {canMarkAttendance && (
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={handleMarkAttendance}
+                  disabled={!event.attendees || event.attendees.length === 0}
+                  title={event.attendees && event.attendees.length > 0 ? "Mark Attendance" : "No attendees yet"}
+                >
+                  <UserCheck className="h-4 w-4 mr-2" />
+                  Mark Attendance
+                </Button>
+              )}
+              
+              {/* Download Attendance Report button - only for organizers and admins */}
+              {canMarkAttendance && (
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={downloadAttendanceReport}
+                  disabled={!event.attendees || event.attendees.length === 0}
+                  title={event.attendees && event.attendees.length > 0 ? "Download Attendance Report" : "No attendees to report"}
+                >
+                  <Download className="h-4 w-4 mr-2" />
+                  Download Report
+                </Button>
+              )}
               
               {/* Edit button - only for event organizer */}
               {isOrganizer && (
@@ -434,14 +629,28 @@ const EventDetails = () => {
                   )}
                 
                   {isRegistered ? (
-                    <Button 
-                      variant="destructive" 
-                      className="w-full" 
-                      onClick={handleCancelRegistration}
-                      disabled={unregistering}
-                    >
-                      {unregistering ? 'Cancelling...' : 'Cancel Registration'}
-                    </Button>
+                    <div className="space-y-2">
+                      {/* QR Code Download Button */}
+                      <Button 
+                        variant="outline" 
+                        className="w-full" 
+                        onClick={handleDownloadQR}
+                        disabled={downloadingQR}
+                      >
+                        <QrCode className="h-4 w-4 mr-2" />
+                        {downloadingQR ? 'Downloading...' : 'Download QR Code'}
+                      </Button>
+                      
+                      {/* Cancel Registration Button */}
+                      <Button 
+                        variant="destructive" 
+                        className="w-full" 
+                        onClick={handleCancelRegistration}
+                        disabled={unregistering}
+                      >
+                        {unregistering ? 'Cancelling...' : 'Cancel Registration'}
+                      </Button>
+                    </div>
                   ) : (
                     <>
                       {!isAdmin ? (
@@ -547,6 +756,14 @@ const EventDetails = () => {
           )}
         </div>
       </main>
+
+      {/* Attendance Modal */}
+      <AttendanceModal
+        isOpen={attendanceModal.isOpen}
+        onClose={closeAttendanceModal}
+        event={attendanceModal.event}
+        onAttendanceUpdate={handleAttendanceUpdate}
+      />
     </AppLayout>
   );
 };

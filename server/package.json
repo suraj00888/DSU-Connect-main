@@ -26,7 +26,9 @@
     "mongoose": "^8.14.1",
     "multer": "^1.4.5-lts.1",
     "node-mailer": "^0.1.1",
-    "socket.io": "^4.8.1"
+    "qrcode": "^1.5.4",
+    "socket.io": "^4.8.1",
+    "uuid": "^11.1.0"
   },
   "devDependencies": {
     "@types/node": "^22.13.10",

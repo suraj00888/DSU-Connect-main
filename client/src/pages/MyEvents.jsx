@@ -84,7 +84,7 @@ const MyEvents = () => {
             <div className="py-12 text-center">
               <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
               <p className="mt-4 text-muted-foreground">Loading your events...</p>
-            </div>
+        </div>
           )}
           
           {/* Error state */}
@@ -92,14 +92,14 @@ const MyEvents = () => {
             <div className="py-12 text-center">
               <AlertCircle className="mx-auto h-12 w-12 text-destructive" />
               <p className="mt-4 text-destructive">{error}</p>
-              <Button 
-                variant="outline" 
+          <Button 
+            variant="outline" 
                 className="mt-4"
-                onClick={refreshEvents}
-              >
-                Try Again
-              </Button>
-            </div>
+            onClick={refreshEvents}
+          >
+            Try Again
+          </Button>
+        </div>
           )}
           
           {/* Empty state */}

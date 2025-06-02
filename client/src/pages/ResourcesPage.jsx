@@ -91,11 +91,11 @@ const ResourcesPage = () => {
       if (response.success && response.data) {
         setResources(response.data.resources || []);
         setPagination(response.data.pagination || {
-          page,
-          limit: pagination.limit,
+        page,
+        limit: pagination.limit,
           total: response.data.resources?.length || 0,
           pages: Math.ceil((response.data.resources?.length || 0) / pagination.limit)
-        });
+      });
       } else {
         setResources([]);
         setPagination({

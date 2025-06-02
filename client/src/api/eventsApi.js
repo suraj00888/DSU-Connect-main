@@ -133,6 +133,103 @@ const eventsApi = {
     } catch (error) {
       throw error.response?.data || { message: 'Failed to fetch attendees' };
     }
+  },
+
+  /**
+   * Get attendance list for an event
+   * @param {string} id - Event ID
+   * @returns {Promise} - API response
+   */
+  getAttendanceList: async (id) => {
+    try {
+      const response = await api.get(`/api/events/${id}/attendance`);
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to fetch attendance list' };
+    }
+  },
+
+  /**
+   * Mark attendance for a user in an event
+   * @param {string} id - Event ID
+   * @param {string} userId - User ID
+   * @param {boolean} attended - Attendance status
+   * @returns {Promise} - API response
+   */
+  markAttendance: async (id, userId, attended) => {
+    try {
+      const response = await api.post(`/api/events/${id}/attendance`, {
+        userId,
+        attended
+      });
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to mark attendance' };
+    }
+  },
+
+  /**
+   * Bulk mark attendance for multiple users
+   * @param {string} id - Event ID
+   * @param {Array} attendanceData - Array of attendance data
+   * @returns {Promise} - API response
+   */
+  bulkMarkAttendance: async (id, attendanceData) => {
+    try {
+      const response = await api.post(`/api/events/${id}/attendance/bulk`, {
+        attendanceData
+      });
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to bulk mark attendance' };
+    }
+  },
+
+  /**
+   * Get user's QR code for an event
+   * @param {string} id - Event ID
+   * @returns {Promise} - API response with QR code data
+   */
+  getUserQRCode: async (id) => {
+    try {
+      const response = await api.get(`/api/events/${id}/qr-code`);
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to get QR code' };
+    }
+  },
+
+  /**
+   * Download QR code as image file
+   * @param {string} id - Event ID
+   * @returns {Promise} - Blob response
+   */
+  downloadQRCode: async (id) => {
+    try {
+      const response = await api.get(`/api/events/${id}/qr-code/download`, {
+        responseType: 'blob'
+      });
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to download QR code' };
+    }
+  },
+
+  /**
+   * Mark attendance using QR code scan
+   * @param {string} id - Event ID
+   * @param {string} qrCodeData - QR code data string
+   * @returns {Promise} - API response
+   */
+  markAttendanceByQR: async (id, qrCodeData) => {
+    try {
+      const response = await api.post(`/api/events/${id}/attendance/qr`, {
+        qrCodeData
+      });
+      return response.data;
+    } catch (error) {
+      throw error.response?.data || { message: 'Failed to mark attendance by QR' };
+    }
   }
 };
 

@@ -4,7 +4,7 @@ import { logout, sessionRefreshed } from "../features/auth/authSlice";
 
 // Create axios instance
 const api = axios.create({
-  baseURL: "http://localhost:5001/", // Replace with your API URL
+  baseURL: import.meta.env.VITE_API_BASE_URL || "http://localhost:5001/",
   headers: {
     "Content-Type": "application/json",
   },
@@ -84,7 +84,7 @@ api.interceptors.response.use(
       try {
         // Call refresh token endpoint
         const response = await axios.post(
-          "http://localhost:5001/api/auth/refresh-token",
+          `${import.meta.env.VITE_API_URL || 'http://localhost:5001'}/api/auth/refresh-token`,
           { refreshToken },
           { skipAuthRefresh: true },
         );

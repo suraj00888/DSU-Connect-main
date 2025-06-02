@@ -16,6 +16,7 @@ import ForgotPassword from '../pages/ForgotPassword.jsx';
 import ResetPassword from '../pages/ResetPassword.jsx';
 import ProfilePage from '../pages/ProfilePage.jsx';
 import ErrorBoundary from '../components/ErrorBoundary';
+import AdminRoute from '../components/AdminRoute';
 
 // Create custom error element
 const ErrorFallbackElement = () => (
@@ -157,7 +158,9 @@ const router = createBrowserRouter([
     element: (
       <AuthLayout authentication={true}>
         <ErrorBoundary>
-          <CreateGroupPage />
+          <AdminRoute>
+            <CreateGroupPage />
+          </AdminRoute>
         </ErrorBoundary>
       </AuthLayout>
     ),

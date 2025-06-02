@@ -1,5 +1,6 @@
 const User = require('../models/User');
 const { validateObjectId } = require('../utils/validators');
+const { uploadToGoogleDrive, deleteFromGoogleDrive } = require('../utils/googleDrive');
 
 // Get current user
 exports.getMe = async (req, res) => {
@@ -195,6 +196,112 @@ exports.deleteUser = async (req, res) => {
     res.status(500).json({
       success: false,
       message: error.message || 'Failed to delete user'
+    });
+  }
+};
+
+// Upload profile photo
+exports.uploadProfilePhoto = async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: 'No file uploaded'
+      });
+    }
+
+    const user = await User.findById(req.user._id);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    // Delete existing profile photo if it exists
+    if (user.profilePhoto?.fileId) {
+      try {
+        await deleteFromGoogleDrive(user.profilePhoto.fileId);
+      } catch (error) {
+        console.error('Error deleting old profile photo:', error);
+        // Continue with upload even if deletion fails
+      }
+    }
+
+    // Upload new photo to Google Drive
+    const uploadResult = await uploadToGoogleDrive(req.file, `profile_photos/${user._id}_${Date.now()}_${req.file.originalname}`);
+
+    // Update user with new profile photo info
+    user.profilePhoto = {
+      fileId: uploadResult.fileId,
+      fileName: req.file.originalname,
+      fileUrl: uploadResult.fileUrl,
+      uploadedAt: new Date()
+    };
+
+    await user.save();
+
+    res.json({
+      success: true,
+      message: 'Profile photo uploaded successfully',
+      data: {
+        profilePhoto: user.profilePhoto
+      }
+    });
+  } catch (error) {
+    console.error('Error uploading profile photo:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to upload profile photo'
+    });
+  }
+};
+
+// Delete profile photo
+exports.deleteProfilePhoto = async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    if (!user.profilePhoto?.fileId) {
+      return res.status(400).json({
+        success: false,
+        message: 'No profile photo to delete'
+      });
+    }
+
+    // Delete from Google Drive
+    try {
+      await deleteFromGoogleDrive(user.profilePhoto.fileId);
+    } catch (error) {
+      console.error('Error deleting from Google Drive:', error);
+      // Continue with database update even if Google Drive deletion fails
+    }
+
+    // Remove profile photo info from user
+    user.profilePhoto = {
+      fileId: null,
+      fileName: null,
+      fileUrl: null,
+      uploadedAt: null
+    };
+
+    await user.save();
+
+    res.json({
+      success: true,
+      message: 'Profile photo deleted successfully'
+    });
+  } catch (error) {
+    console.error('Error deleting profile photo:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to delete profile photo'
     });
   }
 }; 

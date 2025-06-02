@@ -1,11 +1,11 @@
 const Resource = require('../models/Resource');
-const googleDriveService = require('../utils/googleDrive');
+const { googleDriveService } = require('../utils/googleDrive');
 const multer = require('multer');
 const { promisify } = require('util');
 
 // Set up multer for memory storage
 const storage = multer.memoryStorage();
-const upload = multer({
+const upload = multer({ 
     storage,
     limits: { fileSize: 10 * 1024 * 1024 } // 10MB limit
 }).single('file');
@@ -120,12 +120,12 @@ exports.getResources = async (req, res) => {
         res.json({
             success: true,
             data: {
-                resources,
-                pagination: {
-                    total,
-                    page: parseInt(page),
-                    limit: parseInt(limit),
-                    pages: Math.ceil(total / parseInt(limit))
+            resources,
+            pagination: {
+                total,
+                page: parseInt(page),
+                limit: parseInt(limit),
+                pages: Math.ceil(total / parseInt(limit))
                 }
             }
         });
@@ -240,9 +240,9 @@ exports.trackDownload = async (req, res) => {
         res.json({ 
             success: true,
             data: {
-                downloadUrl: resource.fileUrl,
+            downloadUrl: resource.fileUrl,
                 webViewLink: fileInfo.webViewLink,
-                message: 'Download count updated'
+            message: 'Download count updated'
             }
         });
         

@@ -58,6 +58,27 @@ const eventSchema = new mongoose.Schema({
         name: {
             type: String,
             required: true
+        },
+        registeredAt: {
+            type: Date,
+            default: Date.now
+        },
+        attended: {
+            type: Boolean,
+            default: false
+        },
+        attendedAt: {
+            type: Date,
+            default: null
+        },
+        qrCode: {
+            type: String,
+            unique: true,
+            required: false
+        },
+        qrCodeData: {
+            type: String,
+            required: false
         }
     }],
     status: {
@@ -94,6 +115,35 @@ eventSchema.methods.isAtCapacity = function() {
     
     // Otherwise check if attendees count has reached capacity
     return this.attendees.length >= this.capacity;
+};
+
+// Method to mark attendance for a user
+eventSchema.methods.markAttendance = function(userId, attended = true) {
+    const attendee = this.attendees.find(attendee => 
+        attendee.userId.toString() === userId.toString()
+    );
+    
+    if (!attendee) {
+        throw new Error('User is not registered for this event');
+    }
+    
+    attendee.attended = attended;
+    attendee.attendedAt = attended ? new Date() : null;
+    
+    return attendee;
+};
+
+// Method to get attendance statistics
+eventSchema.methods.getAttendanceStats = function() {
+    const totalRegistered = this.attendees.length;
+    const totalAttended = this.attendees.filter(attendee => attendee.attended).length;
+    const attendanceRate = totalRegistered > 0 ? (totalAttended / totalRegistered) * 100 : 0;
+    
+    return {
+        totalRegistered,
+        totalAttended,
+        attendanceRate: Math.round(attendanceRate * 100) / 100 // Round to 2 decimal places
+    };
 };
 
 // Create model

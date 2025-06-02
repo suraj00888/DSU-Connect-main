@@ -37,7 +37,7 @@ exports.getMessages = async (req, res) => {
     // Get messages with pagination
     const messages = await Message.find({ groupId })
       .populate('sender', 'name email')
-      .sort('-createdAt')
+      .sort('createdAt')
       .skip(skip)
       .limit(parseInt(limit));
 
@@ -105,6 +105,11 @@ exports.sendMessage = async (req, res) => {
 
     // Populate sender details
     await message.populate('sender', 'name email');
+
+    // Emit socket event to all users in the group
+    if (global.io) {
+      global.io.to(groupId).emit('new_message', message);
+    }
 
     res.status(201).json({
       success: true,

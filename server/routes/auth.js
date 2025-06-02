@@ -87,13 +87,15 @@ router.post('/login', async (req, res) => {
 
     try {
         // Check if the user exists
-        const user = await User.findOne({ email });
+        const user = await User.findOne({ email }).select('+password');
+        
         if (!user) {
             return res.status(400).json({ message: 'Invalid email' });
         }
 
         // Verify password
         const isMatch = await bcrypt.compare(password, user.password);
+        
         if (!isMatch) {
             return res.status(400).json({ message: 'Invalid password.' });
         }
@@ -120,7 +122,12 @@ router.post('/login', async (req, res) => {
             }
         });
     } catch (err) {
-        res.status(500).json({ message: 'Server error' });
+        console.error('Server error during login:', err);
+        res.status(500).json({ 
+            message: 'Server error during login', 
+            error: err.message,
+            stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
+        });
     }
 });
 

@@ -29,6 +29,24 @@ const userSchema = new mongoose.Schema({
         enum: ['user', 'admin'],
         default: 'user'
     },
+    profilePhoto: {
+        fileId: {
+            type: String,
+            default: null
+        },
+        fileName: {
+            type: String,
+            default: null
+        },
+        fileUrl: {
+            type: String,
+            default: null
+        },
+        uploadedAt: {
+            type: Date,
+            default: null
+        }
+    },
     refreshToken: {
         type: String,
         default: null

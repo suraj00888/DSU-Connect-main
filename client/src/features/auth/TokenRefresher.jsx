@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { useDispatch } from 'react-redux';
+import { useDispatch, useSelector } from 'react-redux';
 import { loginSuccess } from './authSlice';
 import api from '../../api/index.js';
 import SessionExpiryModal from '../../components/SessionExpiryModal';
 import { isTokenValid } from '../../utils/auth';
+import socketService from '../../services/socketService';
 
 /**
  * TokenRefresher - Component to handle token refreshing when it's about to expire
@@ -14,6 +15,7 @@ const TokenRefresher = () => {
   const [showExpiryModal, setShowExpiryModal] = useState(false);
   const [minutesRemaining, setMinutesRemaining] = useState(5);
   const dispatch = useDispatch();
+  const authStatus = useSelector(state => state.auth.status);
   
   useEffect(() => {
     // Set up periodic token checks (every minute)
@@ -30,6 +32,54 @@ const TokenRefresher = () => {
     
     return () => clearInterval(tokenCheckInterval);
   }, []);
+  
+  // Set up token monitoring and socket reconnection
+  useEffect(() => {
+    if (!authStatus) return;
+    
+    // Check token validity initially
+    const tokenStatus = isTokenValid(true);
+    
+    // If token is invalid or about to expire, reconnect socket
+    if (tokenStatus && tokenStatus.valid && tokenStatus.minutesRemaining < 10) {
+      // Disconnect and reconnect socket with new token
+      if (socketService.initialized) {
+        socketService.disconnect();
+        setTimeout(() => {
+          socketService.connect();
+        }, 500);
+      }
+    }
+    
+    // Set up interval to check token validity
+    const intervalId = setInterval(() => {
+      const tokenStatus = isTokenValid(true);
+      
+      // If token is valid but about to expire (<10 min)
+      if (tokenStatus && tokenStatus.valid && tokenStatus.minutesRemaining < 10) {
+        console.log('Token about to expire, reconnecting socket in preparation for refresh');
+        
+        // Socket will get new token after refresh
+        if (socketService.initialized) {
+          socketService.disconnect();
+          setTimeout(() => {
+            socketService.connect();
+          }, 500);
+        }
+      }
+      
+      // If token is refreshed, reconnect socket
+      if (tokenStatus && !tokenStatus.valid && socketService.initialized) {
+        console.log('Token invalid, disconnecting socket');
+        socketService.disconnect();
+      }
+    }, 30000); // Check every 30 seconds
+    
+    // Cleanup function
+    return () => {
+      clearInterval(intervalId);
+    };
+  }, [authStatus]);
   
   const handleExtendSession = async () => {
     try {

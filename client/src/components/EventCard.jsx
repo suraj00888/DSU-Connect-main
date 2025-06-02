@@ -1,6 +1,7 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Calendar, MapPin, Clock, Users } from 'lucide-react';
+import { useSelector } from 'react-redux';
+import { Calendar, MapPin, Clock, Users, UserCheck } from 'lucide-react';
 import { Button } from './ui/button';
 import { cn } from '../lib/utils';
 
@@ -8,8 +9,19 @@ import { cn } from '../lib/utils';
  * Event Card Component
  * Displays a preview of an event with core information
  */
-const EventCard = ({ event, className }) => {
+const EventCard = ({ event, className, onMarkAttendance }) => {
   const navigate = useNavigate();
+  const user = useSelector((state) => state.auth.user);
+  
+  // Check if user can mark attendance (organizer or admin)
+  const canMarkAttendance = user && (
+    user.role === 'admin' || 
+    event?.isOrganizer || // Use the isOrganizer flag from backend
+    (event?.organizer?.id && (
+      event.organizer.id.toString() === user.id?.toString() || 
+      event.organizer.id.toString() === user._id?.toString()
+    ))
+  );
   
   // Format date for display
   const formatDate = (dateString) => {
@@ -58,6 +70,14 @@ const EventCard = ({ event, className }) => {
   // Navigate to event details page
   const viewEventDetails = () => {
     navigate(`/events/${event._id}`);
+  };
+  
+  // Handle mark attendance click
+  const handleMarkAttendance = (e) => {
+    e.stopPropagation(); // Prevent navigation to event details
+    if (onMarkAttendance) {
+      onMarkAttendance(event);
+    }
   };
   
   return (
@@ -128,15 +148,29 @@ const EventCard = ({ event, className }) => {
       </div>
       
       {/* Action Buttons */}
-      <div className="flex justify-end">
+      <div className="flex gap-2">
         <Button
           variant="default"
           size="sm"
           onClick={viewEventDetails}
-          className="text-xs sm:text-sm"
+          className="flex-1 text-xs sm:text-sm"
         >
           View Details
         </Button>
+        
+        {/* Mark Attendance Button - only for organizers and admins */}
+        {canMarkAttendance && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleMarkAttendance}
+            className="text-xs sm:text-sm"
+            title={event.attendees && event.attendees.length > 0 ? "Mark Attendance" : "No attendees yet"}
+            disabled={!event.attendees || event.attendees.length === 0}
+          >
+            <UserCheck className="h-4 w-4" />
+          </Button>
+        )}
       </div>
     </div>
   );

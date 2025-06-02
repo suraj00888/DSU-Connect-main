@@ -1,6 +1,7 @@
 const Event = require('../models/Event');
 const mongoose = require('mongoose');
 const { getDateRange, formatEventData } = require('../utils/eventUtils');
+const { generateRegistrationQR, validateAttendanceQR, generateQRBuffer } = require('../utils/qrCodeUtils');
 
 /**
  * Get all events with pagination and basic filtering
@@ -384,23 +385,41 @@ exports.registerForEvent = async (req, res) => {
             });
         }
         
-        // Add user to attendees with name
+        // Generate QR code for this registration
+        const qrCodeData = await generateRegistrationQR(
+            event._id.toString(),
+            req.user._id.toString(),
+            req.user.name
+        );
+        
+        // Add user to attendees with name and QR code
         event.attendees.push({
             userId: req.user._id,
             name: req.user.name,
-            registeredAt: new Date()
+            registeredAt: new Date(),
+            qrCode: qrCodeData.qrCodeId,
+            qrCodeData: qrCodeData.qrCodeData
         });
         
         // Save changes
         await event.save();
         
-        // Return success response with the updated event
+        // Return success response with the updated event and QR code
         const formattedEvent = formatEventData(event, req.user._id, req.user.role);
         formattedEvent.isAtCapacity = event.isAtCapacity();
         
+        // Find the current user's attendee record to include QR code
+        const userAttendee = event.attendees.find(
+            attendee => attendee.userId.toString() === req.user._id.toString()
+        );
+        
         res.status(200).json({ 
             message: 'Successfully registered for event',
-            event: formattedEvent
+            event: formattedEvent,
+            qrCode: {
+                qrCodeId: qrCodeData.qrCodeId,
+                qrCodeImage: qrCodeData.qrCodeImage
+            }
         });
     } catch (error) {
         console.error('Error registering for event:', error);
@@ -486,6 +505,330 @@ exports.getUserEvents = async (req, res) => {
         res.json(events);
     } catch (error) {
         console.error('Error fetching user events:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+};
+
+/**
+ * Mark attendance for a specific user in an event
+ */
+exports.markAttendance = async (req, res) => {
+    try {
+        const { userId, attended } = req.body;
+        
+        // Find the event
+        const event = await Event.findById(req.params.id);
+        
+        if (!event) {
+            return res.status(404).json({ message: 'Event not found' });
+        }
+        
+        // Check if user is the organizer or admin
+        if (event.organizer.id.toString() !== req.user._id.toString() && 
+            req.user.role !== 'admin') {
+            return res.status(403).json({ 
+                message: 'Not authorized to mark attendance for this event' 
+            });
+        }
+        
+        // Validate userId
+        if (!userId) {
+            return res.status(400).json({ message: 'User ID is required' });
+        }
+        
+        try {
+            // Mark attendance using the model method
+            const attendee = event.markAttendance(userId, attended);
+            
+            // Save the event
+            await event.save();
+            
+            res.json({ 
+                message: `Attendance ${attended ? 'marked' : 'unmarked'} successfully`,
+                attendee: {
+                    userId: attendee.userId,
+                    name: attendee.name,
+                    attended: attendee.attended,
+                    attendedAt: attendee.attendedAt
+                }
+            });
+        } catch (modelError) {
+            return res.status(400).json({ message: modelError.message });
+        }
+    } catch (error) {
+        console.error('Error marking attendance:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+};
+
+/**
+ * Get attendance list for an event
+ */
+exports.getAttendanceList = async (req, res) => {
+    try {
+        // Find the event
+        const event = await Event.findById(req.params.id);
+        
+        if (!event) {
+            return res.status(404).json({ message: 'Event not found' });
+        }
+        
+        // Check if user is the organizer or admin
+        if (event.organizer.id.toString() !== req.user._id.toString() && 
+            req.user.role !== 'admin') {
+            return res.status(403).json({ 
+                message: 'Not authorized to view attendance for this event' 
+            });
+        }
+        
+        // Get attendance statistics
+        const stats = event.getAttendanceStats();
+        
+        // Format attendee data
+        const attendeeList = event.attendees.map(attendee => ({
+            userId: attendee.userId,
+            name: attendee.name,
+            registeredAt: attendee.registeredAt,
+            attended: attendee.attended,
+            attendedAt: attendee.attendedAt
+        }));
+        
+        res.json({
+            eventId: event._id,
+            eventTitle: event.title,
+            stats,
+            attendees: attendeeList
+        });
+    } catch (error) {
+        console.error('Error fetching attendance list:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+};
+
+/**
+ * Bulk mark attendance for multiple users
+ */
+exports.bulkMarkAttendance = async (req, res) => {
+    try {
+        const { attendanceData } = req.body; // Array of { userId, attended }
+        
+        // Find the event
+        const event = await Event.findById(req.params.id);
+        
+        if (!event) {
+            return res.status(404).json({ message: 'Event not found' });
+        }
+        
+        // Check if user is the organizer or admin
+        if (event.organizer.id.toString() !== req.user._id.toString() && 
+            req.user.role !== 'admin') {
+            return res.status(403).json({ 
+                message: 'Not authorized to mark attendance for this event' 
+            });
+        }
+        
+        // Validate input
+        if (!Array.isArray(attendanceData) || attendanceData.length === 0) {
+            return res.status(400).json({ message: 'Invalid attendance data' });
+        }
+        
+        const results = [];
+        const errors = [];
+        
+        // Process each attendance record
+        for (const { userId, attended } of attendanceData) {
+            try {
+                const attendee = event.markAttendance(userId, attended);
+                results.push({
+                    userId: attendee.userId,
+                    name: attendee.name,
+                    attended: attendee.attended,
+                    success: true
+                });
+            } catch (modelError) {
+                errors.push({
+                    userId,
+                    error: modelError.message
+                });
+            }
+        }
+        
+        // Save the event
+        await event.save();
+        
+        // Get updated statistics
+        const stats = event.getAttendanceStats();
+        
+        res.json({
+            message: 'Bulk attendance update completed',
+            stats,
+            results,
+            errors: errors.length > 0 ? errors : undefined
+        });
+    } catch (error) {
+        console.error('Error in bulk mark attendance:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+};
+
+/**
+ * Download QR code for user's registration
+ */
+exports.downloadQRCode = async (req, res) => {
+    try {
+        // Find the event
+        const event = await Event.findById(req.params.id);
+        
+        if (!event) {
+            return res.status(404).json({ message: 'Event not found' });
+        }
+        
+        // Find user's registration
+        const userAttendee = event.attendees.find(
+            attendee => attendee.userId.toString() === req.user._id.toString()
+        );
+        
+        if (!userAttendee) {
+            return res.status(404).json({ 
+                message: 'You are not registered for this event' 
+            });
+        }
+        
+        // Generate QR code buffer for download
+        const qrBuffer = await generateQRBuffer(userAttendee.qrCodeData);
+        
+        // Set headers for file download
+        res.setHeader('Content-Type', 'image/png');
+        res.setHeader('Content-Disposition', `attachment; filename="event-qr-${event.title.replace(/[^a-zA-Z0-9]/g, '-')}.png"`);
+        
+        // Send the QR code image
+        res.send(qrBuffer);
+    } catch (error) {
+        console.error('Error downloading QR code:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+};
+
+/**
+ * Mark attendance using QR code scan
+ */
+exports.markAttendanceByQR = async (req, res) => {
+    try {
+        const { qrCodeData } = req.body;
+        
+        // Find the event
+        const event = await Event.findById(req.params.id);
+        
+        if (!event) {
+            return res.status(404).json({ message: 'Event not found' });
+        }
+        
+        // Check if user is the organizer or admin
+        if (event.organizer.id.toString() !== req.user._id.toString() && 
+            req.user.role !== 'admin') {
+            return res.status(403).json({ 
+                message: 'Not authorized to mark attendance for this event' 
+            });
+        }
+        
+        // Validate QR code
+        const validation = validateAttendanceQR(qrCodeData, req.params.id);
+        
+        if (!validation.valid) {
+            return res.status(400).json({ message: validation.error });
+        }
+        
+        const { userId, qrCodeId } = validation.data;
+        
+        // Find the attendee by QR code ID
+        const attendee = event.attendees.find(
+            att => att.qrCode === qrCodeId && att.userId.toString() === userId
+        );
+        
+        if (!attendee) {
+            return res.status(404).json({ 
+                message: 'Invalid QR code or attendee not found' 
+            });
+        }
+        
+        // Check if already marked present
+        if (attendee.attended) {
+            return res.status(400).json({ 
+                message: `${attendee.name} is already marked as present` 
+            });
+        }
+        
+        // Mark attendance
+        attendee.attended = true;
+        attendee.attendedAt = new Date();
+        
+        // Save the event
+        await event.save();
+        
+        res.json({ 
+            message: `Attendance marked successfully for ${attendee.name}`,
+            attendee: {
+                userId: attendee.userId,
+                name: attendee.name,
+                attended: attendee.attended,
+                attendedAt: attendee.attendedAt
+            }
+        });
+    } catch (error) {
+        console.error('Error marking attendance by QR:', error);
+        res.status(500).json({ message: 'Server error' });
+    }
+};
+
+/**
+ * Get user's QR code for an event
+ */
+exports.getUserQRCode = async (req, res) => {
+    try {
+        // Find the event
+        const event = await Event.findById(req.params.id);
+        
+        if (!event) {
+            return res.status(404).json({ message: 'Event not found' });
+        }
+        
+        // Find user's registration
+        const userAttendee = event.attendees.find(
+            attendee => attendee.userId.toString() === req.user._id.toString()
+        );
+        
+        if (!userAttendee) {
+            return res.status(404).json({ 
+                message: 'You are not registered for this event' 
+            });
+        }
+        
+        // Parse QR code data to get the original QR code image
+        const qrData = JSON.parse(userAttendee.qrCodeData);
+        
+        // Generate QR code image
+        const QRCode = require('qrcode');
+        const qrCodeImage = await QRCode.toDataURL(userAttendee.qrCodeData, {
+            errorCorrectionLevel: 'M',
+            type: 'image/png',
+            quality: 0.92,
+            margin: 1,
+            color: {
+                dark: '#000000',
+                light: '#FFFFFF'
+            },
+            width: 256
+        });
+        
+        res.json({
+            qrCodeId: userAttendee.qrCode,
+            qrCodeImage: qrCodeImage,
+            eventTitle: event.title,
+            userName: userAttendee.name,
+            registeredAt: userAttendee.registeredAt
+        });
+    } catch (error) {
+        console.error('Error getting user QR code:', error);
         res.status(500).json({ message: 'Server error' });
     }
 }; 

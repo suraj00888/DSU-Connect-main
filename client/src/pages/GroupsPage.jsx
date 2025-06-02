@@ -1,11 +1,17 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import groupsApi from '../api/groupsApi';
 import { toast } from 'react-hot-toast';
+import AppLayout from '../components/AppLayout';
+import Header from '../components/Header';
+import { Search, Users, Plus, Trash2 } from 'lucide-react';
+import { Button } from '../components/ui/button';
+import { Input } from '../components/ui/input';
 
 const GroupsPage = () => {
   const user = useSelector((state) => state.auth.user);
+  const isAdmin = user?.role === 'admin';
   const [groups, setGroups] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -25,13 +31,17 @@ const GroupsPage = () => {
         filter: filter !== 'all' ? filter : undefined
       };
       const response = await groupsApi.getGroups(params);
+      console.log('Groups API Response:', response);
+      
       if (response && response.success) {
-        setGroups(Array.isArray(response.data.groups) ? response.data.groups : []);
+        console.log('Groups data:', response.data);
+        setGroups(Array.isArray(response.data) ? response.data : []);
       } else {
         setGroups([]);
         setError(response?.message || 'Failed to load groups');
       }
     } catch (err) {
+      console.error('Error loading groups:', err);
       setGroups([]);
       setError(err?.message || 'An error occurred while loading groups');
     } finally {
@@ -64,14 +74,9 @@ const GroupsPage = () => {
   };
 
   const handleLeaveGroup = async (groupId) => {
-    if (!groupId) {
-      toast.error('Invalid group ID');
-      return;
-    }
-    
     try {
       const response = await groupsApi.leaveGroup(groupId);
-      if (response && response.success) {
+      if (response?.success) {
         toast.success('Successfully left the group');
         loadGroups(); // Reload groups to update the UI
       } else {
@@ -82,11 +87,45 @@ const GroupsPage = () => {
     }
   };
 
+  const handleDeleteGroup = async (groupId, groupName) => {
+    // Show confirmation dialog
+    const confirmed = window.confirm(
+      `Are you sure you want to delete the group "${groupName}"? This action cannot be undone.`
+    );
+    
+    if (!confirmed) return;
+
+    try {
+      const response = await groupsApi.deleteGroup(groupId);
+      if (response?.success) {
+        toast.success('Group deleted successfully');
+        loadGroups(); // Reload groups to update the UI
+      } else {
+        toast.error(response?.message || 'Failed to delete group');
+      }
+    } catch (err) {
+      toast.error(err?.message || 'An error occurred while deleting the group');
+    }
+  };
+
+  // Helper function to check if user can delete a group
+  const canDeleteGroup = (group) => {
+    if (!user || !group) return false;
+    
+    const currentUserId = user.id || user._id;
+    const isCreator = group.createdBy && (
+      (typeof group.createdBy === 'object' && String(group.createdBy._id) === String(currentUserId)) ||
+      (typeof group.createdBy === 'string' && String(group.createdBy) === String(currentUserId))
+    );
+    
+    return isAdmin || isCreator;
+  };
+
   const renderGroups = () => {
     if (!Array.isArray(groups)) {
       return (
         <div className="text-center py-8">
-          <p className="text-gray-500 text-lg">No groups found</p>
+          <p className="text-muted-foreground text-lg">No groups found</p>
         </div>
       );
     }
@@ -94,7 +133,7 @@ const GroupsPage = () => {
     if (groups.length === 0) {
       return (
         <div className="text-center py-8">
-          <p className="text-gray-500 text-lg">No groups found</p>
+          <p className="text-muted-foreground text-lg">No groups found</p>
         </div>
       );
     }
@@ -104,38 +143,83 @@ const GroupsPage = () => {
         {groups.map((group) => (
           <div
             key={group?._id || Math.random().toString()}
-            className="bg-white rounded-lg shadow-md overflow-hidden"
+            className="bg-card/90 backdrop-blur-sm rounded-xl shadow-lg overflow-hidden hover:shadow-xl transition-all duration-300"
           >
             <div className="p-6">
-              <h2 className="text-xl font-semibold mb-2">{group?.name || 'Unnamed Group'}</h2>
-              <p className="text-gray-600 mb-4">{group?.description || 'No description'}</p>
-              <div className="flex items-center justify-between text-sm text-gray-500 mb-4">
-                <span>{group?.members && group.members.length ? group.members.length : 0} members</span>
+              <h2 className="text-xl font-semibold mb-2 text-card-foreground">{group?.name || 'Unnamed Group'}</h2>
+              <p className="text-muted-foreground mb-4">{group?.description || 'No description'}</p>
+              <div className="flex items-center justify-between text-sm text-muted-foreground mb-4">
+                <span className="flex items-center">
+                  <Users className="h-4 w-4 mr-1" />
+                  {group?.members && group.members.length ? group.members.length : 0} members
+                </span>
                 <span>
                   Created by {group?.createdBy ? (group.createdBy.name || group.createdBy.email || 'Unknown') : 'Unknown'}
                 </span>
               </div>
               <div className="flex gap-2">
-                <Link
-                  to={`/groups/${group?._id}`}
-                  className="flex-1 px-4 py-2 bg-blue-500 text-white text-center rounded hover:bg-blue-600"
-                >
-                  View Group
-                </Link>
-                {user && group?.members && Array.isArray(group.members) && group.members.includes(user._id) ? (
-                  <button
-                    onClick={() => handleLeaveGroup(group._id)}
-                    className="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600"
-                  >
-                    Leave
-                  </button>
+                {user && group?.members && Array.isArray(group.members) && 
+                  group.members.some(member => {
+                    // Get the current user's ID (from Redux, it's stored as 'id', not '_id')
+                    const currentUserId = user.id || user._id;
+                    
+                    // Check if member is an object with _id or a string
+                    const memberId = typeof member === 'object' ? member._id : member;
+                    
+                    // Compare as strings to ensure proper matching
+                    return String(memberId) === String(currentUserId);
+                  }) ? (
+                  // User is a member - show View Group and Leave buttons
+                  <>
+                    <Link
+                      to={`/groups/${group?._id}`}
+                      className="flex-1 px-4 py-2 bg-primary text-primary-foreground text-center rounded-md hover:bg-primary/90 transition-colors"
+                    >
+                      View Group
+                    </Link>
+                    <Button
+                      onClick={() => handleLeaveGroup(group._id)}
+                      variant="destructive"
+                      size="sm"
+                    >
+                      Leave
+                    </Button>
+                    {/* Delete button for admins and group creators */}
+                    {canDeleteGroup(group) && (
+                      <Button
+                        onClick={() => handleDeleteGroup(group._id, group.name)}
+                        variant="destructive"
+                        size="sm"
+                        className="px-2"
+                        title="Delete Group"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    )}
+                  </>
                 ) : (
-                  <button
-                    onClick={() => handleJoinGroup(group?._id)}
-                    className="px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600"
-                  >
-                    Join
-                  </button>
+                  // User is not a member - show Join button and Delete button (if authorized)
+                  <>
+                    <Button
+                      onClick={() => handleJoinGroup(group?._id)}
+                      variant="outline"
+                      className="flex-1"
+                    >
+                      Join Group
+                    </Button>
+                    {/* Delete button for admins and group creators */}
+                    {canDeleteGroup(group) && (
+                      <Button
+                        onClick={() => handleDeleteGroup(group._id, group.name)}
+                        variant="destructive"
+                        size="sm"
+                        className="px-2"
+                        title="Delete Group"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    )}
+                  </>
                 )}
               </div>
             </div>
@@ -147,96 +231,109 @@ const GroupsPage = () => {
 
   if (loading) {
     return (
-      <div className="flex justify-center items-center min-h-screen">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
-      </div>
+      <AppLayout>
+        <Header title="Discussion Groups" />
+        <main className="w-full px-4 sm:px-6 lg:px-8 py-8 sm:py-10">
+          <div className="flex justify-center items-center py-12">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
+          </div>
+        </main>
+      </AppLayout>
     );
   }
 
   if (error) {
     return (
-      <div className="flex justify-center items-center min-h-screen">
-        <div className="text-red-500 text-center">
-          <h2 className="text-2xl font-bold mb-2">Error</h2>
-          <p>{error}</p>
-          <button
-            onClick={loadGroups}
-            className="mt-4 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
-          >
-            Try Again
-          </button>
-        </div>
-      </div>
+      <AppLayout>
+        <Header title="Discussion Groups" />
+        <main className="w-full px-4 sm:px-6 lg:px-8 py-8 sm:py-10">
+          <div className="text-center py-8">
+            <div className="text-destructive">
+              <h2 className="text-2xl font-bold mb-2">Error</h2>
+              <p>{error}</p>
+              <Button
+                onClick={loadGroups}
+                className="mt-4"
+              >
+                Try Again
+              </Button>
+            </div>
+          </div>
+        </main>
+      </AppLayout>
     );
   }
 
   return (
-    <div className="container mx-auto px-4 py-8">
-      <div className="flex justify-between items-center mb-8">
-        <h1 className="text-3xl font-bold">Discussion Groups</h1>
-        <Link
-          to="/groups/create"
-          className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
-        >
-          Create Group
-        </Link>
-      </div>
+    <AppLayout>
+      <Header title="Discussion Groups" />
+      <main className="w-full px-4 sm:px-6 lg:px-8 py-8 sm:py-10">
+        <div className="bg-card/90 backdrop-blur-sm rounded-xl shadow-lg p-6 sm:p-7 md:p-8">
+          {/* Header section with title and actions */}
+          <div className="flex flex-col sm:flex-row justify-between items-center mb-6">
+            <div className="text-center sm:text-left">
+              <h2 className="text-lg sm:text-xl font-medium text-card-foreground mb-2">Discussion Groups</h2>
+              <p className="text-sm text-muted-foreground">
+                Connect with other DSU students in topic-specific discussion groups
+              </p>
+            </div>
+            
+            {isAdmin && (
+              <Link
+                to="/groups/create"
+                className="mt-4 sm:mt-0 inline-flex items-center px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors"
+              >
+                <Plus className="h-4 w-4 mr-2" />
+                Create Group
+              </Link>
+            )}
+          </div>
 
-      {/* Search and Filter */}
-      <div className="mb-8">
-        <form onSubmit={handleSearch} className="flex gap-4 mb-4">
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search groups..."
-            className="flex-1 px-4 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-          <button
-            type="submit"
-            className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
-          >
-            Search
-          </button>
-        </form>
+          {/* Search and Filter */}
+          <div className="flex flex-col sm:flex-row gap-4 mb-6">
+            <div className="relative flex-grow">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <form onSubmit={handleSearch}>
+                <Input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search groups..."
+                  className="pl-10"
+                />
+              </form>
+            </div>
+            
+            <div className="flex gap-2">
+              <Button 
+                variant={filter === 'all' ? 'default' : 'outline'} 
+                size="sm"
+                onClick={() => setFilter('all')}
+              >
+                All Groups
+              </Button>
+              <Button 
+                variant={filter === 'joined' ? 'default' : 'outline'} 
+                size="sm"
+                onClick={() => setFilter('joined')}
+              >
+                My Groups
+              </Button>
+              <Button 
+                variant={filter === 'created' ? 'default' : 'outline'} 
+                size="sm"
+                onClick={() => setFilter('created')}
+              >
+                Created by Me
+              </Button>
+            </div>
+          </div>
 
-        <div className="flex gap-4">
-          <button
-            onClick={() => setFilter('all')}
-            className={`px-4 py-2 rounded ${
-              filter === 'all'
-                ? 'bg-blue-500 text-white'
-                : 'bg-gray-200 hover:bg-gray-300'
-            }`}
-          >
-            All Groups
-          </button>
-          <button
-            onClick={() => setFilter('joined')}
-            className={`px-4 py-2 rounded ${
-              filter === 'joined'
-                ? 'bg-blue-500 text-white'
-                : 'bg-gray-200 hover:bg-gray-300'
-            }`}
-          >
-            My Groups
-          </button>
-          <button
-            onClick={() => setFilter('created')}
-            className={`px-4 py-2 rounded ${
-              filter === 'created'
-                ? 'bg-blue-500 text-white'
-                : 'bg-gray-200 hover:bg-gray-300'
-            }`}
-          >
-            Created by Me
-          </button>
+          {/* Groups Grid */}
+          {renderGroups()}
         </div>
-      </div>
-
-      {/* Groups Grid */}
-      {renderGroups()}
-    </div>
+      </main>
+    </AppLayout>
   );
 };
 
